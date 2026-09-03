@@ -111,6 +111,24 @@ if "payload_text" not in st.session_state:
         indent=2,
     )
 
+import re
+
+def clean_think_tags(text):
+    """Separate <think>...</think> reasoning blocks from the final answer."""
+    if not isinstance(text, str):
+        return text, None
+        
+    think_pattern = re.compile(r'<think>(.*?)</think>', re.DOTALL | re.IGNORECASE)
+    match = think_pattern.search(text)
+    
+    thought_process = None
+    if match:
+        thought_process = match.group(1).strip()
+        cleaned_text = think_pattern.sub('', text).strip()
+        return cleaned_text, thought_process
+        
+    return text.strip(), None
+
 def extract_n8n_response_text(resp_data):
     """Smart parser to extract readable text/markdown from n8n response structures."""
     if isinstance(resp_data, str):
@@ -165,6 +183,11 @@ with st.sidebar:
         )
         
         send_session_id = st.checkbox("Include Session ID in Payload", value=True)
+        show_thoughts = st.checkbox(
+            "Show Model Reasoning (<think>)",
+            value=False,
+            help="If using DeepSeek-R1 or reasoning models, show the internal thought process in an expandable drawer.",
+        )
         if send_session_id:
             st.caption(f"Current Session ID: `{st.session_state.session_id}`")
             if st.button("🔄 New Session / Reset Chat", use_container_width=True):
@@ -229,6 +252,9 @@ if mode == "💬 Chat Assistant":
     # Display message history
     for msg in st.session_state.chat_messages:
         with st.chat_message(msg["role"], avatar="🧑‍💻" if msg["role"] == "user" else "🤖"):
+            if msg.get("thought") and show_thoughts:
+                with st.expander("💭 Thought Process (Chain of Thought)", expanded=False):
+                    st.caption(msg["thought"])
             st.markdown(msg["content"])
             if "latency" in msg and msg["latency"]:
                 st.caption(f"⏱️ {msg['latency']}s")
@@ -271,16 +297,23 @@ if mode == "💬 Chat Assistant":
                         if response.status_code == 200:
                             try:
                                 resp_data = response.json()
-                                reply_text = extract_n8n_response_text(resp_data)
+                                raw_reply_text = extract_n8n_response_text(resp_data)
                             except Exception:
-                                reply_text = response.text or "*(Empty 200 OK response received from n8n)*"
+                                raw_reply_text = response.text or "*(Empty 200 OK response received from n8n)*"
                                 
-                            st.markdown(reply_text)
+                            clean_reply, thought_process = clean_think_tags(raw_reply_text)
+                            
+                            if thought_process and show_thoughts:
+                                with st.expander("💭 Thought Process (Chain of Thought)", expanded=False):
+                                    st.caption(thought_process)
+                                    
+                            st.markdown(clean_reply)
                             st.caption(f"⏱️ {elapsed}s | Status: 200 OK")
                             
                             st.session_state.chat_messages.append({
                                 "role": "assistant",
-                                "content": reply_text,
+                                "content": clean_reply,
+                                "thought": thought_process,
                                 "latency": elapsed,
                                 "raw": resp_data if 'resp_data' in locals() else response.text,
                                 "timestamp": datetime.now().strftime("%H:%M:%S"),
