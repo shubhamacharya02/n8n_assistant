@@ -206,7 +206,7 @@ with st.sidebar:
             st.session_state.payload_text = json.dumps(presets[selected_preset], indent=2)
             st.rerun()
 
-    timeout_sec = st.slider("Request Timeout (s)", min_value=5, max_value=300, value=60, step=5)
+    timeout_sec = st.slider("Request Timeout (s)", min_value=5, max_value=600, value=180, step=5, help="Default: 180s (3 minutes)")
 
 # --- Header ---
 st.markdown(
